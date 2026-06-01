@@ -16,6 +16,7 @@ import {
 } from "../../src/lib/stellar/promptHashClient";
 import { withObservability } from "../../src/lib/observability/wrapper";
 import { checkRateLimit } from "../../src/lib/observability/rateLimiter";
+import { checkReplayProtection } from "../../src/lib/observability/replayProtection";
 import { metrics } from "../../src/lib/observability/metrics";
 import { dispatchEvent } from "../../server/src/services/webhookDispatcher";
 import { recordAuditEvent } from "../../server/src/services/auditTrail";
@@ -203,6 +204,28 @@ async function handler(req: any, res: any) {
         reason: "invalid_signature",
       });
       res.status(401).json(apiError(ErrorCode.INVALID_SIGNATURE, "Invalid wallet signature."));
+      return;
+    }
+
+    const replayCheck = await checkReplayProtection(
+      String(token),
+      String(signedMessage),
+    );
+    if (!replayCheck.valid) {
+      req.logger.warn({ address, promptId }, "Replay attack detected");
+      metrics.trackUnlockFailure(String(address), String(promptId), "replay_detected");
+      void recordAuditEvent({
+        action: "unlock_replay_detected",
+        result: "blocked",
+        promptId: String(promptId),
+        walletAddress: String(address),
+        requestId: req.requestId ?? null,
+        clientIp,
+        reason: "replay_attack",
+      });
+      res.status(400).json(
+        apiError(ErrorCode.TEMPORARY_FAILURE, "This unlock request has already been processed."),
+      );
       return;
     }
 
