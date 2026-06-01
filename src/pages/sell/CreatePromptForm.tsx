@@ -5,6 +5,7 @@ import {
   ListingQualityChecklist,
   buildChecklistItems,
 } from "@/components/sell/ListingQualityChecklist";
+import { CreatorOnboarding } from "@/components/sell/CreatorOnboarding";
 import { featuredPromptTemplates } from "@/data/featuredPrompts";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -78,6 +79,8 @@ export function CreatePromptForm({ onCreated }: CreatePromptFormProps) {
   const [showChecklist, setShowChecklist] = useState(false);
   const [draftRestored, setDraftRestored] = useState(false);
   const [lastSavedAt, setLastSavedAt] = useState<string | null>(null);
+  const [showOnboarding, setShowOnboarding] = useState(true);
+  const [isFirstListing, setIsFirstListing] = useState(true);
 
   const isConfigured = useMemo(
     () =>
@@ -276,6 +279,13 @@ export function CreatePromptForm({ onCreated }: CreatePromptFormProps) {
 
   return (
     <div className="space-y-6">
+      {showOnboarding && (
+        <CreatorOnboarding
+          isFirstListing={isFirstListing}
+          onDismiss={() => setShowOnboarding(false)}
+        />
+      )}
+
       {!isConfigured ? (
         <div className="rounded-2xl border border-amber-400/20 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
           Connect your wallet and configure `PUBLIC_PROMPT_HASH_CONTRACT_ID` plus
