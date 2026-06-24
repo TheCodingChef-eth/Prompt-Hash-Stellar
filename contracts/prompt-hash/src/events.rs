@@ -113,6 +113,21 @@ struct SplitsUpdated {
     pub prompt_id: u128,
 }
 
+#[contractevent]
+struct DisputeOpened {
+    #[topic]
+    pub prompt_id: u128,
+    pub buyer: Address,
+}
+
+#[contractevent]
+struct DisputeResolved {
+    #[topic]
+    pub prompt_id: u128,
+    pub buyer: Address,
+    pub refunded: bool,
+}
+
 pub struct Events;
 
 impl Events {
@@ -226,7 +241,12 @@ impl Events {
     }
 
     pub fn emit_platform_fee_updated(env: &Env, old_fee: u32, new_fee: u32, admin: Address) {
-        PlatformFeeUpdated { old_fee, new_fee, admin }.publish(env);
+        PlatformFeeUpdated {
+            old_fee,
+            new_fee,
+            admin,
+        }
+        .publish(env);
     }
 
     pub fn emit_listing_extended(env: &Env, prompt_id: u128, new_expires_at: u64) {
@@ -247,5 +267,18 @@ impl Events {
 
     pub fn emit_splits_updated(env: &Env, prompt_id: u128) {
         SplitsUpdated { prompt_id }.publish(env);
+    }
+
+    pub fn emit_dispute_opened(env: &Env, prompt_id: u128, buyer: Address) {
+        DisputeOpened { prompt_id, buyer }.publish(env);
+    }
+
+    pub fn emit_dispute_resolved(env: &Env, prompt_id: u128, buyer: Address, refunded: bool) {
+        DisputeResolved {
+            prompt_id,
+            buyer,
+            refunded,
+        }
+        .publish(env);
     }
 }

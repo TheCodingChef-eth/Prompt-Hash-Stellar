@@ -3,7 +3,7 @@ use crate::mock_asset::FungibleTokenContract;
 use crate::types::{Error, ListingConfig, Split};
 extern crate std;
 use soroban_sdk::{
-    testutils::{Address as _, Ledger},
+    testutils::{Address as _, Events, Ledger},
     token, Address, Bytes, BytesN, Env, String, Vec,
 };
 
@@ -62,6 +62,7 @@ fn create_prompt(
             asset: asset.clone(),
             expires_at: 0,
             splits: Vec::new(env),
+            tags: Vec::new(&env),
         },
     )
 }
@@ -100,6 +101,7 @@ fn create_prompt_with_splits(
             asset: asset.clone(),
             expires_at: 0,
             splits,
+            tags: Vec::new(&env),
         },
     )
 }
@@ -411,7 +413,7 @@ fn test_admin_can_update_platform_fee_within_bounds() {
     let client = PromptHashContractClient::new(&env, &context.contract);
 
     // admin sets platform fee to 300 BPS (3%)
-    client.update_platform_fee(&300u32);
+    client.update_platform_fee(&context.admin, &300u32);
     assert_eq!(client.get_platform_fee(), 300u32);
 }
 
@@ -451,7 +453,7 @@ fn test_update_platform_fee_emits_event() {
 
     // Capture event count before
     let before = env.events().all().len();
-    client.update_platform_fee(&400u32);
+    client.update_platform_fee(&context.admin, &400u32);
     let after = env.events().all().len();
     assert!(after >= before + 1, "expected at least one new event");
 }
@@ -936,6 +938,7 @@ fn test_global_pause_blocks_mutations_but_not_reads() {
             asset: context.xlm.clone(),
             expires_at: 0,
             splits: Vec::new(&env),
+            tags: Vec::new(&env),
         },
     );
     match create_res {
@@ -1213,6 +1216,7 @@ fn test_create_prompt_blocked_when_paused() {
             asset: context.xlm.clone(),
             expires_at: 0,
             splits: Vec::new(&env),
+            tags: Vec::new(&env),
         },
     );
     match result {
@@ -1976,6 +1980,7 @@ fn test_create_prompt_with_expiry_stores_expires_at() {
             asset: context.xlm.clone(),
             expires_at,
             splits: Vec::new(&env),
+            tags: Vec::new(&env),
         },
     );
 
@@ -2009,6 +2014,7 @@ fn test_expired_listing_excluded_from_get_all_prompts() {
             asset: context.xlm.clone(),
             expires_at: 2_000,
             splits: Vec::new(&env),
+            tags: Vec::new(&env),
         },
     );
     let persistent = create_prompt(&env, &client, &creator, "Persistent", 5_000, &context.xlm);
@@ -2051,6 +2057,7 @@ fn test_buy_expired_listing_fails() {
             asset: context.xlm.clone(),
             expires_at: 2_000,
             splits: Vec::new(&env),
+            tags: Vec::new(&env),
         },
     );
 
@@ -2111,6 +2118,7 @@ fn test_extend_listing_pushes_expiry_and_allows_purchase() {
             asset: context.xlm.clone(),
             expires_at: 2_000, // expires at t=2000
             splits: Vec::new(&env),
+            tags: Vec::new(&env),
         },
     );
 
@@ -2187,6 +2195,7 @@ fn test_create_prompt_with_splits_stores_split_data() {
             asset: context.xlm.clone(),
             expires_at: 0,
             splits,
+            tags: Vec::new(&env),
         },
     );
 
@@ -2230,6 +2239,7 @@ fn test_buy_prompt_with_splits_distributes_correctly() {
             asset: context.xlm.clone(),
             expires_at: 0,
             splits,
+            tags: Vec::new(&env),
         },
     );
 
@@ -2291,6 +2301,7 @@ fn test_splits_exceeding_max_bps_minus_fee_rejected() {
             asset: context.xlm.clone(),
             expires_at: 0,
             splits,
+            tags: Vec::new(&env),
         },
     );
     match result {
@@ -2341,6 +2352,7 @@ fn test_multiple_splits_distribute_all_recipients() {
             asset: context.xlm.clone(),
             expires_at: 0,
             splits,
+            tags: Vec::new(&env),
         },
     );
 
@@ -2513,7 +2525,14 @@ fn test_revise_listing_increments_revision_and_snapshots_old_metadata() {
     let client = PromptHashContractClient::new(&env, &context.contract);
 
     let creator = Address::generate(&env);
-    let prompt_id = create_prompt(&env, &client, &creator, "Original Title", 1_000, &context.xlm);
+    let prompt_id = create_prompt(
+        &env,
+        &client,
+        &creator,
+        "Original Title",
+        1_000,
+        &context.xlm,
+    );
 
     // Revision starts at 0
     let prompt = client.get_prompt(&prompt_id);
@@ -2572,8 +2591,14 @@ fn test_revise_listing_multiple_times_each_revision_preserved() {
     );
 
     assert_eq!(client.get_prompt(&prompt_id).revision, 2);
-    assert_eq!(client.get_listing_revision(&prompt_id, &0).price_stroops, 100);
-    assert_eq!(client.get_listing_revision(&prompt_id, &1).price_stroops, 200);
+    assert_eq!(
+        client.get_listing_revision(&prompt_id, &0).price_stroops,
+        100
+    );
+    assert_eq!(
+        client.get_listing_revision(&prompt_id, &1).price_stroops,
+        200
+    );
 }
 
 #[test]
@@ -2649,7 +2674,13 @@ fn test_update_splits_replaces_existing_splits() {
     });
 
     let prompt_id = create_prompt_with_splits(
-        &env, &client, &creator, "Updatable Splits", price, &context.xlm, initial_splits,
+        &env,
+        &client,
+        &creator,
+        "Updatable Splits",
+        price,
+        &context.xlm,
+        initial_splits,
     );
     assert_eq!(client.get_prompt(&prompt_id).splits.len(), 1);
 
@@ -2683,7 +2714,10 @@ fn test_update_splits_replaces_existing_splits() {
 
     assert_eq!(xlm_client.balance(&co1), co1_start + expected_co1);
     assert_eq!(xlm_client.balance(&co2), co2_start + expected_co2);
-    assert_eq!(xlm_client.balance(&creator), creator_start + expected_creator);
+    assert_eq!(
+        xlm_client.balance(&creator),
+        creator_start + expected_creator
+    );
 }
 
 #[test]
@@ -2702,7 +2736,13 @@ fn test_update_splits_clears_all_splits() {
     });
 
     let prompt_id = create_prompt_with_splits(
-        &env, &client, &creator, "Clear Splits", 5_000, &context.xlm, initial_splits,
+        &env,
+        &client,
+        &creator,
+        "Clear Splits",
+        5_000,
+        &context.xlm,
+        initial_splits,
     );
 
     let empty_splits = Vec::<Split>::new(&env);
@@ -2724,7 +2764,10 @@ fn test_update_splits_rejects_unauthorized_caller() {
     let result = client.try_update_splits(&stranger, &prompt_id, &splits);
     match result {
         Err(Ok(Error::Unauthorized)) => {}
-        other => panic!("expected Unauthorized for stranger update_splits, got {:?}", other),
+        other => panic!(
+            "expected Unauthorized for stranger update_splits, got {:?}",
+            other
+        ),
     }
 }
 
@@ -2747,7 +2790,10 @@ fn test_update_splits_rejects_invalid_total_bps() {
     let result = client.try_update_splits(&creator, &prompt_id, &bad_splits);
     match result {
         Err(Ok(Error::InvalidSplits)) => {}
-        other => panic!("expected InvalidSplits for over-allocated update, got {:?}", other),
+        other => panic!(
+            "expected InvalidSplits for over-allocated update, got {:?}",
+            other
+        ),
     }
 }
 
@@ -2812,11 +2858,15 @@ fn test_create_prompt_rejects_duplicate_split_recipients() {
             asset: context.xlm.clone(),
             expires_at: 0,
             splits: dup_splits,
+            tags: Vec::new(&env),
         },
     );
     match result {
         Err(Ok(Error::DuplicateSplitRecipient)) => {}
-        other => panic!("expected DuplicateSplitRecipient on create, got {:?}", other),
+        other => panic!(
+            "expected DuplicateSplitRecipient on create, got {:?}",
+            other
+        ),
     }
 }
 
@@ -2833,6 +2883,134 @@ fn test_update_splits_blocked_when_paused() {
     let result = client.try_update_splits(&creator, &prompt_id, &Vec::new(&env));
     match result {
         Err(Ok(Error::ContractIsPaused)) => {}
-        other => panic!("expected ContractIsPaused for update_splits, got {:?}", other),
+        other => panic!(
+            "expected ContractIsPaused for update_splits, got {:?}",
+            other
+        ),
+    }
+}
+
+#[test]
+fn test_create_prompt_tags_and_category_filters() {
+    let env: Env = Default::default();
+    let context = setup(&env);
+    let client = PromptHashContractClient::new(&env, &context.contract);
+    let creator = Address::generate(&env);
+
+    let mut tags = Vec::new(&env);
+    tags.push_back(String::from_str(&env, "testing"));
+    tags.push_back(String::from_str(&env, "rust"));
+
+    let prompt_id = client.create_prompt(
+        &creator,
+        &String::from_str(&env, "https://example.com/prompt.png"),
+        &String::from_str(&env, "Tagged Prompt"),
+        &String::from_str(&env, "Software Development"),
+        &String::from_str(&env, "Generate tests."),
+        &String::from_str(&env, "ciphertext"),
+        &String::from_str(&env, "iv"),
+        &String::from_str(&env, "wrapped-key"),
+        &hash(&env, 91),
+        &ListingConfig {
+            price: 1_000,
+            asset: context.xlm.clone(),
+            expires_at: 0,
+            splits: Vec::new(&env),
+            tags,
+        },
+    );
+
+    let prompt = client.get_prompt(&prompt_id);
+    assert_eq!(prompt.tags.len(), 2);
+    assert_eq!(
+        prompt.tags.get(0).unwrap(),
+        String::from_str(&env, "testing")
+    );
+
+    let by_category =
+        client.get_prompts_by_category(&String::from_str(&env, "Software Development"));
+    assert_eq!(by_category.len(), 1);
+    assert_eq!(by_category.get(0).unwrap().id, prompt_id);
+
+    let by_tag = client.get_prompts_by_tag(&String::from_str(&env, "rust"));
+    assert_eq!(by_tag.len(), 1);
+    assert_eq!(by_tag.get(0).unwrap().id, prompt_id);
+}
+
+#[test]
+fn test_buyer_can_open_and_admin_can_resolve_refund_dispute() {
+    let env: Env = Default::default();
+    let context = setup(&env);
+    let client = PromptHashContractClient::new(&env, &context.contract);
+    let xlm_client = token::StellarAssetClient::new(&env, &context.xlm);
+    let creator = Address::generate(&env);
+    let buyer = Address::generate(&env);
+    let price = 10_000;
+    let prompt_id = create_prompt(&env, &client, &creator, "Refundable", price, &context.xlm);
+
+    fund_buyer(&xlm_client, &buyer, &context.contract, price);
+    client.buy_prompt(&buyer, &prompt_id, &None::<Address>, &price, &None::<Bytes>);
+    xlm_client.mint(&context.contract, &price);
+
+    client.open_dispute(
+        &buyer,
+        &prompt_id,
+        &crate::types::DisputeReason::FailedIntegrityVerification,
+    );
+    let open = client.get_dispute(&prompt_id, &buyer);
+    assert_eq!(open.status, crate::types::DisputeStatus::Open);
+
+    let buyer_before = xlm_client.balance(&buyer);
+    client.resolve_dispute(&context.admin, &prompt_id, &buyer, &true);
+    let resolved = client.get_dispute(&prompt_id, &buyer);
+    assert_eq!(resolved.status, crate::types::DisputeStatus::Refunded);
+    assert_eq!(xlm_client.balance(&buyer), buyer_before + price);
+    assert!(!client.has_access(&buyer, &prompt_id));
+}
+
+#[test]
+fn test_invalid_dispute_requires_purchase() {
+    let env: Env = Default::default();
+    let context = setup(&env);
+    let client = PromptHashContractClient::new(&env, &context.contract);
+    let creator = Address::generate(&env);
+    let stranger = Address::generate(&env);
+    let prompt_id = create_prompt(&env, &client, &creator, "No Purchase", 10_000, &context.xlm);
+
+    let res = client.try_open_dispute(
+        &stranger,
+        &prompt_id,
+        &crate::types::DisputeReason::MissingMetadata,
+    );
+    match res {
+        Err(Ok(Error::LicenseNotFound)) => {}
+        other => panic!("expected LicenseNotFound, got {:?}", other),
+    }
+}
+
+#[test]
+fn test_resolved_dispute_cannot_be_resolved_twice() {
+    let env: Env = Default::default();
+    let context = setup(&env);
+    let client = PromptHashContractClient::new(&env, &context.contract);
+    let xlm_client = token::StellarAssetClient::new(&env, &context.xlm);
+    let creator = Address::generate(&env);
+    let buyer = Address::generate(&env);
+    let price = 10_000;
+    let prompt_id = create_prompt(&env, &client, &creator, "Resolved", price, &context.xlm);
+
+    fund_buyer(&xlm_client, &buyer, &context.contract, price);
+    client.buy_prompt(&buyer, &prompt_id, &None::<Address>, &price, &None::<Bytes>);
+    client.open_dispute(
+        &buyer,
+        &prompt_id,
+        &crate::types::DisputeReason::InvalidEncryptedPayload,
+    );
+    client.resolve_dispute(&context.admin, &prompt_id, &buyer, &false);
+
+    let res = client.try_resolve_dispute(&context.admin, &prompt_id, &buyer, &false);
+    match res {
+        Err(Ok(Error::DisputeResolved)) => {}
+        other => panic!("expected DisputeResolved, got {:?}", other),
     }
 }

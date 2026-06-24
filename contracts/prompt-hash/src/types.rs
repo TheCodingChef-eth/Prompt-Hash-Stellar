@@ -42,6 +42,9 @@ pub enum Error {
     DuplicateSplitRecipient = 32,
     TooManySplits = 33,
     FeeExceedsMaximum = 34,
+    DisputeAlreadyOpen = 35,
+    DisputeNotFound = 36,
+    DisputeResolved = 37,
 }
 
 #[contracttype]
@@ -62,6 +65,34 @@ pub enum DataKey {
     /// Snapshot of a listing taken before a revision (#226).
     /// Key: (prompt_id, revision_number_before_change)
     ListingRevision(u128, u32),
+    PurchaseDispute(u128, Address),
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum DisputeStatus {
+    Open,
+    Refunded,
+    Rejected,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum DisputeReason {
+    InvalidEncryptedPayload,
+    MissingMetadata,
+    FailedIntegrityVerification,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PurchaseDispute {
+    pub prompt_id: u128,
+    pub buyer: Address,
+    pub reason: DisputeReason,
+    pub opened_at: u64,
+    pub resolved_at: u64,
+    pub status: DisputeStatus,
 }
 
 #[contracttype]
@@ -107,6 +138,8 @@ pub struct ListingConfig {
     pub expires_at: u64,
     /// Optional co-creator revenue splits (empty Vec = no splits).
     pub splits: Vec<Split>,
+    /// Search tags used for marketplace discovery. Tags should be lowercase kebab-case.
+    pub tags: Vec<String>,
 }
 
 #[contracttype]
@@ -135,6 +168,8 @@ pub struct Prompt {
     /// Monotonically increasing revision counter. Starts at 0 on creation and
     /// increments by 1 on each successful `revise_listing` call (#226).
     pub revision: u32,
+    /// Search tags used for marketplace discovery. Tags should be lowercase kebab-case.
+    pub tags: Vec<String>,
 }
 
 /// Snapshot of the mutable listing fields captured before a revision (#226).
@@ -281,6 +316,22 @@ pub trait PromptHashTrait {
     fn has_access(env: Env, user: Address, prompt_id: u128) -> Result<bool, Error>;
     fn get_prompt(env: Env, prompt_id: u128) -> Result<Prompt, Error>;
     fn get_all_prompts(env: Env) -> Result<Vec<Prompt>, Error>;
+    fn get_prompts_by_category(env: Env, category: String) -> Result<Vec<Prompt>, Error>;
+    fn get_prompts_by_tag(env: Env, tag: String) -> Result<Vec<Prompt>, Error>;
+    fn open_dispute(
+        env: Env,
+        buyer: Address,
+        prompt_id: u128,
+        reason: DisputeReason,
+    ) -> Result<(), Error>;
+    fn resolve_dispute(
+        env: Env,
+        admin: Address,
+        prompt_id: u128,
+        buyer: Address,
+        refund: bool,
+    ) -> Result<(), Error>;
+    fn get_dispute(env: Env, prompt_id: u128, buyer: Address) -> Result<PurchaseDispute, Error>;
     fn get_prompts_by_creator(env: Env, creator: Address) -> Result<Vec<Prompt>, Error>;
     fn get_prompts_by_buyer(env: Env, buyer: Address) -> Result<Vec<Prompt>, Error>;
     fn set_fee_percentage(env: Env, new_fee_percentage: u32) -> Result<(), Error>;
@@ -290,7 +341,7 @@ pub trait PromptHashTrait {
     fn set_referral_percentage(env: Env, new_referral_percentage: u32) -> Result<(), Error>;
     fn get_referral_percentage(env: Env) -> u32;
     // New platform fee governance API
-    fn update_platform_fee(env: Env, new_fee: u32) -> Result<(), Error>;
+    fn update_platform_fee(env: Env, admin: Address, new_fee: u32) -> Result<(), Error>;
     fn get_platform_fee(env: Env) -> u32;
     fn set_pause_status(env: Env, paused: bool) -> Result<(), Error>;
     fn is_paused(env: Env) -> bool;

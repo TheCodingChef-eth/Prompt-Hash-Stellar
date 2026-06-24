@@ -1,6 +1,9 @@
 use super::events::Events;
 use super::storage::Storage;
-use super::types::{DataKey, Error, ListingConfig, ListingRevisionRecord, Prompt, PromptHashTrait, Split};
+use super::types::{
+    DataKey, DisputeReason, DisputeStatus, Error, ListingConfig, ListingRevisionRecord, Prompt,
+    PromptHashTrait, PurchaseDispute, Split,
+};
 use soroban_sdk::{contract, contractimpl, token, Address, Bytes, BytesN, Env, String, Vec};
 use stellar_access::ownable::{self as ownable, Ownable};
 use stellar_macros::{default_impl, only_owner};
@@ -20,6 +23,8 @@ const MAX_IV_LEN: u32 = 64;
 const LEASE_PRICE_BPS: u32 = 4_000;
 const MAX_ACCESS_EXPIRY: u64 = u64::MAX;
 const MAX_SPLITS: u32 = 10;
+const MAX_TAGS: u32 = 8;
+const MAX_TAG_LEN: u32 = 32;
 
 #[contract]
 pub struct PromptHashContract;
@@ -86,6 +91,7 @@ impl PromptHashTrait for PromptHashContract {
         validate_splits(&env, &listing.splits)?;
         validate_no_duplicate_recipients(&listing.splits)?;
         ensure(listing.splits.len() <= MAX_SPLITS, Error::TooManySplits)?;
+        validate_tags(&listing.tags)?;
 
         let prompt_id = Storage::get_prompt_counter(&env);
         let prompt = Prompt {
@@ -107,6 +113,7 @@ impl PromptHashTrait for PromptHashContract {
             expires_at: listing.expires_at,
             splits: listing.splits,
             revision: 0,
+            tags: listing.tags,
         };
 
         Storage::save_prompt(&env, &prompt)?;
@@ -433,8 +440,7 @@ impl PromptHashTrait for PromptHashContract {
     ) -> Result<ListingRevisionRecord, Error> {
         // Verify the listing exists before looking up the revision.
         Storage::require_prompt(&env, prompt_id)?;
-        Storage::get_listing_revision(&env, prompt_id, revision)
-            .ok_or(Error::PromptNotFound)
+        Storage::get_listing_revision(&env, prompt_id, revision).ok_or(Error::PromptNotFound)
     }
 
     fn update_splits(
@@ -472,6 +478,85 @@ impl PromptHashTrait for PromptHashContract {
         Ok(Storage::get_all_prompts(&env))
     }
 
+    fn get_prompts_by_category(env: Env, category: String) -> Result<Vec<Prompt>, Error> {
+        validate_len(&category, MAX_CATEGORY_LEN, Error::InvalidCategoryLength)?;
+        Ok(Storage::get_prompts_by_category(&env, &category))
+    }
+
+    fn get_prompts_by_tag(env: Env, tag: String) -> Result<Vec<Prompt>, Error> {
+        validate_len(&tag, MAX_TAG_LEN, Error::InvalidCategoryLength)?;
+        Ok(Storage::get_prompts_by_tag(&env, &tag))
+    }
+
+    fn open_dispute(
+        env: Env,
+        buyer: Address,
+        prompt_id: u128,
+        reason: DisputeReason,
+    ) -> Result<(), Error> {
+        buyer.require_auth();
+        ensure(!Storage::is_paused(&env), Error::ContractIsPaused)?;
+        let now = env.ledger().timestamp();
+        Storage::require_purchase(&env, prompt_id, &buyer)?;
+        if let Some(dispute) = Storage::get_dispute(&env, prompt_id, &buyer) {
+            ensure(
+                dispute.status != DisputeStatus::Open,
+                Error::DisputeAlreadyOpen,
+            )?;
+        }
+        let dispute = PurchaseDispute {
+            prompt_id,
+            buyer: buyer.clone(),
+            reason,
+            opened_at: now,
+            resolved_at: 0,
+            status: DisputeStatus::Open,
+        };
+        Storage::save_dispute(&env, &dispute);
+        Events::emit_dispute_opened(&env, prompt_id, buyer);
+        Ok(())
+    }
+
+    fn resolve_dispute(
+        env: Env,
+        admin: Address,
+        prompt_id: u128,
+        buyer: Address,
+        refund: bool,
+    ) -> Result<(), Error> {
+        admin.require_auth();
+        let owner = ownable::get_owner(&env).ok_or(Error::Unauthorized)?;
+        ensure(owner == admin, Error::Unauthorized)?;
+        let prompt = Storage::require_prompt(&env, prompt_id)?;
+        let purchase = Storage::require_purchase(&env, prompt_id, &buyer)?;
+        let mut dispute = Storage::require_dispute(&env, prompt_id, &buyer)?;
+        ensure(
+            dispute.status == DisputeStatus::Open,
+            Error::DisputeResolved,
+        )?;
+        dispute.resolved_at = env.ledger().timestamp();
+        if refund {
+            let asset_client = token::StellarAssetClient::new(&env, &prompt.asset);
+            asset_client.transfer(
+                &env.current_contract_address(),
+                &buyer,
+                &purchase.original_price,
+            );
+            Storage::remove_purchase(&env, prompt_id, &buyer);
+            Storage::remove_prompt_from_buyer(&env, &buyer, prompt_id);
+            dispute.status = DisputeStatus::Refunded;
+        } else {
+            dispute.status = DisputeStatus::Rejected;
+        }
+        Storage::save_dispute(&env, &dispute);
+        Events::emit_dispute_resolved(&env, prompt_id, buyer, refund);
+        Ok(())
+    }
+
+    fn get_dispute(env: Env, prompt_id: u128, buyer: Address) -> Result<PurchaseDispute, Error> {
+        Storage::require_dispute(&env, prompt_id, &buyer)
+    }
+
     fn get_prompts_by_creator(env: Env, creator: Address) -> Result<Vec<Prompt>, Error> {
         Ok(Storage::get_prompts_by_creator(&env, &creator))
     }
@@ -505,13 +590,15 @@ impl PromptHashTrait for PromptHashContract {
 
     // New governance API: secure, bounded platform fee updates with cryptographic event logging.
     #[only_owner]
-    fn update_platform_fee(env: Env, new_fee: u32) -> Result<(), Error> {
+    fn update_platform_fee(env: Env, admin: Address, new_fee: u32) -> Result<(), Error> {
+        admin.require_auth();
+        let owner = ownable::get_owner(&env).ok_or(Error::Unauthorized)?;
+        ensure(owner == admin, Error::Unauthorized)?;
         ensure(new_fee <= MAX_PLATFORM_FEE, Error::FeeExceedsMaximum)?;
 
         let old_fee = Storage::get_fee_percentage(&env);
         Storage::set_fee_percentage(&env, &new_fee);
-        // Emit event with the invoker as admin for auditability
-        let admin = env.invoker();
+        // Emit event with the authenticated admin for auditability
         Events::emit_platform_fee_updated(&env, old_fee, new_fee, admin);
         Ok(())
     }
@@ -828,6 +915,18 @@ fn validate_prompt_fields(
         Error::InvalidWrappedKeyLength,
     )?;
     validate_len(encryption_iv, MAX_IV_LEN, Error::InvalidIvLength)?;
+    Ok(())
+}
+
+fn validate_tags(tags: &Vec<String>) -> Result<(), Error> {
+    ensure(tags.len() <= MAX_TAGS, Error::InvalidCategoryLength)?;
+    for i in 0..tags.len() {
+        let tag = tags.get(i).unwrap();
+        validate_len(&tag, MAX_TAG_LEN, Error::InvalidCategoryLength)?;
+        for j in (i + 1)..tags.len() {
+            ensure(tag != tags.get(j).unwrap(), Error::InvalidCategoryLength)?;
+        }
+    }
     Ok(())
 }
 

@@ -1,4 +1,4 @@
-use super::types::{DataKey, Error, ListingRevisionRecord, Prompt, Purchase};
+use super::types::{DataKey, Error, ListingRevisionRecord, Prompt, Purchase, PurchaseDispute};
 use soroban_sdk::{token, Address, BytesN, Env, Vec};
 
 pub const DAY_IN_LEDGERS: u32 = 17280;
@@ -78,6 +78,33 @@ impl Storage {
                 // Skip expired listings (expires_at == 0 means never expires)
                 if prompt.expires_at == 0 || prompt.expires_at >= now {
                     prompts.push_back(prompt);
+                }
+            }
+        }
+        prompts
+    }
+
+    pub fn get_prompts_by_category(env: &Env, category: &soroban_sdk::String) -> Vec<Prompt> {
+        let all = Self::get_all_prompts(env);
+        let mut prompts = Vec::new(env);
+        for index in 0..all.len() {
+            let prompt = all.get(index).unwrap();
+            if prompt.category == *category {
+                prompts.push_back(prompt);
+            }
+        }
+        prompts
+    }
+
+    pub fn get_prompts_by_tag(env: &Env, tag: &soroban_sdk::String) -> Vec<Prompt> {
+        let all = Self::get_all_prompts(env);
+        let mut prompts = Vec::new(env);
+        for index in 0..all.len() {
+            let prompt = all.get(index).unwrap();
+            for tag_index in 0..prompt.tags.len() {
+                if prompt.tags.get(tag_index).unwrap() == *tag {
+                    prompts.push_back(prompt.clone());
+                    break;
                 }
             }
         }
@@ -225,6 +252,29 @@ impl Storage {
         env.storage().persistent().set(&key, &purchase);
         Self::extend_key_ttl(env, &key);
         Self::add_prompt_to_buyer(env, buyer, prompt.id);
+    }
+
+    pub fn save_dispute(env: &Env, dispute: &PurchaseDispute) {
+        let key = DataKey::PurchaseDispute(dispute.prompt_id, dispute.buyer.clone());
+        env.storage().persistent().set(&key, dispute);
+        Self::extend_key_ttl(env, &key);
+    }
+
+    pub fn get_dispute(env: &Env, prompt_id: u128, buyer: &Address) -> Option<PurchaseDispute> {
+        let key = DataKey::PurchaseDispute(prompt_id, buyer.clone());
+        let dispute = env.storage().persistent().get(&key);
+        if env.storage().persistent().has(&key) {
+            Self::extend_key_ttl(env, &key);
+        }
+        dispute
+    }
+
+    pub fn require_dispute(
+        env: &Env,
+        prompt_id: u128,
+        buyer: &Address,
+    ) -> Result<PurchaseDispute, Error> {
+        Self::get_dispute(env, prompt_id, buyer).ok_or(Error::DisputeNotFound)
     }
 
     pub fn set_fee_percentage(env: &Env, fee_percentage: &u32) {
