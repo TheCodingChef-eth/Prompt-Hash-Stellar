@@ -1,9 +1,10 @@
-import { useState } from "react";
-import { Link } from "react-router-dom";
+import { useMemo, useState } from "react";
+import { Link, useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import {
   BookOpenCheck,
   Eye,
+  FilterX,
   Loader2,
   LockKeyhole,
   PlugZap,
@@ -14,6 +15,13 @@ import {
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { useWallet } from "@/hooks/useWallet";
 import { browserStellarConfig } from "@/lib/stellar/browserConfig";
 import { getPromptsByBuyer, type PromptRecord } from "@/lib/stellar/promptHashClient";
@@ -23,6 +31,42 @@ import { UnlockExplainer, type UnlockState } from "@/components/UnlockExplainer"
 import { stellarNetwork } from "@/lib/env";
 
 const EXPECTED_NETWORK = stellarNetwork;
+
+type StatusFilter = "all" | "unlocked" | "locked";
+type SortOption = "newest" | "oldest" | "price-high" | "price-low";
+
+const STATUS_OPTIONS: { value: StatusFilter; label: string }[] = [
+  { value: "all", label: "All statuses" },
+  { value: "unlocked", label: "Unlocked" },
+  { value: "locked", label: "Locked" },
+];
+
+const SORT_OPTIONS: { value: SortOption; label: string }[] = [
+  { value: "newest", label: "Newest first" },
+  { value: "oldest", label: "Oldest first" },
+  { value: "price-high", label: "Price: high to low" },
+  { value: "price-low", label: "Price: low to high" },
+];
+
+const FILTER_DEFAULTS = {
+  category: "all",
+  status: "all" as StatusFilter,
+  sort: "newest" as SortOption,
+};
+
+const ALL_CATEGORIES = "all";
+
+function coerceStatus(value: string | null): StatusFilter {
+  return STATUS_OPTIONS.some((o) => o.value === value)
+    ? (value as StatusFilter)
+    : FILTER_DEFAULTS.status;
+}
+
+function coerceSort(value: string | null): SortOption {
+  return SORT_OPTIONS.some((o) => o.value === value)
+    ? (value as SortOption)
+    : FILTER_DEFAULTS.sort;
+}
 
 function EmptyLibrary() {
   return (
@@ -206,6 +250,33 @@ export function BuyerLibrary() {
   const [unlocked, setUnlocked] = useState<Record<string, string>>({});
   const [unlockStates, setUnlockStates] = useState<Record<string, UnlockState>>({});
 
+  // Filter + sort state is mirrored in the URL so it survives reloads and can be
+  // shared/bookmarked (e.g. /purchases?category=Development&status=locked&sort=oldest).
+  const [searchParams, setSearchParams] = useSearchParams();
+  const categoryFilter = searchParams.get("category") ?? FILTER_DEFAULTS.category;
+  const statusFilter = coerceStatus(searchParams.get("status"));
+  const sortOption = coerceSort(searchParams.get("sort"));
+
+  const updateFilter = (key: string, value: string, defaultValue: string) => {
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        if (value === defaultValue) {
+          next.delete(key);
+        } else {
+          next.set(key, value);
+        }
+        return next;
+      },
+      { replace: true },
+    );
+  };
+
+  const hasActiveFilters =
+    categoryFilter !== FILTER_DEFAULTS.category ||
+    statusFilter !== FILTER_DEFAULTS.status ||
+    sortOption !== FILTER_DEFAULTS.sort;
+
   const isWrongNetwork =
     Boolean(address) &&
     Boolean(network) &&
@@ -217,6 +288,50 @@ export function BuyerLibrary() {
       address ? getPromptsByBuyer(browserStellarConfig, address) : [],
     enabled: Boolean(address) && !isWrongNetwork,
   });
+
+  const categories = useMemo(
+    () =>
+      Array.from(
+        new Set(prompts.map((prompt) => prompt.category).filter(Boolean)),
+      ).sort((a, b) => a.localeCompare(b)),
+    [prompts],
+  );
+
+  const visiblePrompts = useMemo(() => {
+    const filtered = prompts.filter((prompt) => {
+      if (categoryFilter !== ALL_CATEGORIES && prompt.category !== categoryFilter) {
+        return false;
+      }
+      if (statusFilter !== "all") {
+        const isUnlocked = Boolean(unlocked[prompt.id.toString()]);
+        if (statusFilter === "unlocked" && !isUnlocked) return false;
+        if (statusFilter === "locked" && isUnlocked) return false;
+      }
+      return true;
+    });
+
+    const sorted = [...filtered];
+    switch (sortOption) {
+      case "oldest":
+        sorted.sort((a, b) => Number(a.id - b.id));
+        break;
+      case "price-high":
+        sorted.sort((a, b) =>
+          a.priceStroops > b.priceStroops ? -1 : a.priceStroops < b.priceStroops ? 1 : 0,
+        );
+        break;
+      case "price-low":
+        sorted.sort((a, b) =>
+          a.priceStroops < b.priceStroops ? -1 : a.priceStroops > b.priceStroops ? 1 : 0,
+        );
+        break;
+      case "newest":
+      default:
+        sorted.sort((a, b) => Number(b.id - a.id));
+        break;
+    }
+    return sorted;
+  }, [prompts, categoryFilter, statusFilter, sortOption, unlocked]);
 
   const setUnlockState = (id: string, state: UnlockState) =>
     setUnlockStates((prev) => ({ ...prev, [id]: state }));
@@ -283,20 +398,135 @@ export function BuyerLibrary() {
   if (prompts.length === 0) return <EmptyLibrary />;
 
   return (
-    <div className="space-y-4">
-      {prompts.map((prompt) => {
-        const id = prompt.id.toString();
-        return (
-          <PromptLibraryCard
-            key={id}
-            prompt={prompt}
-            plaintext={unlocked[id]}
-            unlockState={unlockStates[id] ?? "idle"}
-            isBusy={busyId === id}
-            onUnlock={() => void handleUnlock(prompt)}
-          />
-        );
-      })}
+    <div className="space-y-5">
+      {/* Filter + sort toolbar */}
+      <div className="flex flex-col gap-3 rounded-xl border border-white/10 bg-white/[0.02] p-4 sm:flex-row sm:flex-wrap sm:items-end">
+        <div className="flex-1 space-y-1.5">
+          <label className="text-[10px] font-medium uppercase tracking-[0.14em] text-slate-500">
+            Category
+          </label>
+          <Select
+            value={categoryFilter}
+            onValueChange={(value) =>
+              updateFilter("category", value, FILTER_DEFAULTS.category)
+            }
+          >
+            <SelectTrigger className="h-9 w-full">
+              <SelectValue placeholder="All categories" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={ALL_CATEGORIES}>All categories</SelectItem>
+              {categories.map((category) => (
+                <SelectItem key={category} value={category}>
+                  {category}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div className="flex-1 space-y-1.5">
+          <label className="text-[10px] font-medium uppercase tracking-[0.14em] text-slate-500">
+            Status
+          </label>
+          <Select
+            value={statusFilter}
+            onValueChange={(value) =>
+              updateFilter("status", value, FILTER_DEFAULTS.status)
+            }
+          >
+            <SelectTrigger className="h-9 w-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {STATUS_OPTIONS.map((option) => (
+                <SelectItem key={option.value} value={option.value}>
+                  {option.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div className="flex-1 space-y-1.5">
+          <label className="text-[10px] font-medium uppercase tracking-[0.14em] text-slate-500">
+            Sort by
+          </label>
+          <Select
+            value={sortOption}
+            onValueChange={(value) =>
+              updateFilter("sort", value, FILTER_DEFAULTS.sort)
+            }
+          >
+            <SelectTrigger className="h-9 w-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {SORT_OPTIONS.map((option) => (
+                <SelectItem key={option.value} value={option.value}>
+                  {option.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        {hasActiveFilters && (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setSearchParams({}, { replace: true })}
+            className="h-9 shrink-0 border border-white/10 text-slate-300 hover:bg-white/10"
+          >
+            <FilterX className="h-3.5 w-3.5" />
+            Clear
+          </Button>
+        )}
+      </div>
+
+      <p className="text-xs text-slate-500">
+        Showing {visiblePrompts.length} of {prompts.length}{" "}
+        {prompts.length === 1 ? "prompt" : "prompts"}
+      </p>
+
+      {visiblePrompts.length === 0 ? (
+        <div className="grid min-h-48 place-items-center rounded-xl border border-dashed border-white/15 bg-white/[0.02] p-8 text-center">
+          <div className="max-w-xs">
+            <h3 className="text-base font-semibold text-white">
+              No prompts match these filters
+            </h3>
+            <p className="mt-2 text-sm leading-6 text-slate-400">
+              Try a different category or status, or clear the filters to see
+              everything in your library.
+            </p>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setSearchParams({}, { replace: true })}
+              className="mt-4 border border-white/10 text-slate-300 hover:bg-white/10"
+            >
+              <FilterX className="h-3.5 w-3.5" />
+              Clear filters
+            </Button>
+          </div>
+        </div>
+      ) : (
+        <div className="space-y-4">
+          {visiblePrompts.map((prompt) => {
+            const id = prompt.id.toString();
+            return (
+              <PromptLibraryCard
+                key={id}
+                prompt={prompt}
+                plaintext={unlocked[id]}
+                unlockState={unlockStates[id] ?? "idle"}
+                isBusy={busyId === id}
+                onUnlock={() => void handleUnlock(prompt)}
+              />
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }

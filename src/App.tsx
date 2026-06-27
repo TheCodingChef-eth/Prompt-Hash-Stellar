@@ -11,6 +11,9 @@ const MyPurchasesPage = lazy(
 );
 const StatusPage = lazy(() => import("./pages/status/page.tsx"));
 const SellerPage = lazy(() => import("./pages/sellers/page.tsx"));
+const PromptDetailPage = lazy(
+  () => import("./pages/prompts/PromptDetailPage.tsx"),
+);
 
 const AppLayout = () => (
   <main className="min-h-screen bg-slate-950 text-white">
@@ -35,6 +38,7 @@ function App() {
           <Route path="/chat" element={<ChatHome />} />
           <Route path="/profile" element={<ProfilePage />} />
           <Route path="/purchases" element={<MyPurchasesPage />} />
+          <Route path="/prompts/:id" element={<PromptDetailPage />} />
           <Route path="/status" element={<StatusPage />} />
           <Route path="/sellers/:sellerId" element={<SellerPage />} />
           <Route path="*" element={<Home />} />

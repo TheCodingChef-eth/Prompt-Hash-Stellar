@@ -26,6 +26,15 @@ export type ListingValidationErrors = Partial<
   Record<keyof ListingFormInput, string>
 >;
 
+export interface ListingValidationOptions {
+  /**
+   * When true, large encrypted payloads are stored off-chain (IPFS) and only a
+   * compact reference is kept on-chain, so the on-chain payload size cap no
+   * longer constrains how long the full prompt can be.
+   */
+  offChainStorage?: boolean;
+}
+
 export type ChecklistStatus = "pass" | "fail" | "warn" | "info";
 
 export interface ListingChecklistItem {
@@ -41,6 +50,7 @@ function trim(value: string) {
 
 export function validateListingForm(
   input: ListingFormInput,
+  options: ListingValidationOptions = {},
 ): ListingValidationErrors {
   const errors: ListingValidationErrors = {};
   const imageUrl = trim(input.imageUrl);
@@ -91,7 +101,7 @@ export function validateListingForm(
       "Add at least 10 characters of prompt content so buyers receive meaningful value.";
   } else if (fullPrompt.length > LISTING_LIMITS.fullPrompt) {
     errors.fullPrompt = `Shorten the prompt to ${LISTING_LIMITS.fullPrompt.toLocaleString()} characters or fewer.`;
-  } else if (wouldExceedPayloadLimit(fullPrompt.length)) {
+  } else if (!options.offChainStorage && wouldExceedPayloadLimit(fullPrompt.length)) {
     const maxPlaintext = Math.floor(
       LISTING_LIMITS.encryptedPayload / ESTIMATED_ENCRYPTION_OVERHEAD,
     );
@@ -173,8 +183,9 @@ export function validateEncryptedPayload(
 
 export function buildListingChecklistItems(
   input: ListingFormInput,
+  options: ListingValidationOptions = {},
 ): ListingChecklistItem[] {
-  const errors = validateListingForm(input);
+  const errors = validateListingForm(input, options);
   const items: ListingChecklistItem[] = [];
 
   const fieldChecks: Array<{

@@ -24,6 +24,10 @@ import {
   encryptPromptPlaintext,
   wrapPromptKey,
 } from "@/lib/crypto/promptCrypto";
+import {
+  isIpfsUploadConfigured,
+  uploadCiphertextToIpfs,
+} from "@/lib/ipfs";
 import { browserStellarConfig } from "@/lib/stellar/browserConfig";
 import { xlmToStroops } from "@/lib/stellar/format";
 import { createPrompt } from "@/lib/stellar/promptHashClient";
@@ -94,9 +98,13 @@ export function CreatePromptForm({ onCreated }: CreatePromptFormProps) {
     [address, signTransaction],
   );
 
+  // When IPFS is configured, large encrypted payloads are stored off-chain so
+  // the on-chain size cap no longer limits how long a prompt can be.
+  const offChainStorage = useMemo(() => isIpfsUploadConfigured(), []);
+
   const checklistItems = useMemo(
-    () => buildChecklistItems(formData),
-    [formData],
+    () => buildChecklistItems(formData, { offChainStorage }),
+    [formData, offChainStorage],
   );
 
   const checklistHasFailures = checklistItems.some((i) => i.status === "fail");
@@ -196,7 +204,7 @@ export function CreatePromptForm({ onCreated }: CreatePromptFormProps) {
   };
 
   const validateForm = () => {
-    const nextErrors = validateListingForm(formData);
+    const nextErrors = validateListingForm(formData, { offChainStorage });
     setErrors(nextErrors);
     return Object.keys(nextErrors).length === 0;
   };
@@ -234,8 +242,19 @@ export function CreatePromptForm({ onCreated }: CreatePromptFormProps) {
       const encrypted = await encryptPromptPlaintext(formData.fullPrompt);
       const wrappedKey = await wrapPromptKey(encrypted.keyBytes, unlockPublicKey);
 
+      // Store the (potentially large) ciphertext off-chain on IPFS when
+      // configured, keeping only a compact `ipfs://<cid>` reference on-chain.
+      // Falls back to inline on-chain storage when IPFS is not configured.
+      let encryptedPromptPayload = encrypted.encryptedPrompt;
+      if (offChainStorage) {
+        const { uri } = await uploadCiphertextToIpfs(encrypted.encryptedPrompt, {
+          name: `prompt-${address.slice(0, 8)}`,
+        });
+        encryptedPromptPayload = uri;
+      }
+
       const payloadErrors = validateEncryptedPayload({
-        encryptedPrompt: encrypted.encryptedPrompt,
+        encryptedPrompt: encryptedPromptPayload,
         wrappedKey,
         encryptionIv: encrypted.encryptionIv,
       });
@@ -253,7 +272,7 @@ export function CreatePromptForm({ onCreated }: CreatePromptFormProps) {
           title: formData.title.trim(),
           category: formData.category,
           previewText: formData.previewText.trim(),
-          encryptedPrompt: encrypted.encryptedPrompt,
+          encryptedPrompt: encryptedPromptPayload,
           encryptionIv: encrypted.encryptionIv,
           wrappedKey,
           contentHash: encrypted.contentHash,

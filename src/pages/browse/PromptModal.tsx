@@ -23,6 +23,7 @@ import {
   DollarSign,
   ShoppingBag,
   Hash,
+  Share2,
 } from "lucide-react";
 
 // Small inline copy button used in the receipt reference details
@@ -73,6 +74,38 @@ interface PromptModalProps {
   onClose: () => void;
   onRefresh?: () => void;
 }
+
+// Compact "copy share link" control that points at the public prompt page so
+// shared links render rich preview cards (Open Graph / Twitter).
+const ShareLinkButton: React.FC<{ itemId: string }> = ({ itemId }) => {
+  const [copied, setCopied] = React.useState(false);
+  const handleShare = async () => {
+    const origin = typeof window !== "undefined" ? window.location.origin : "";
+    const result = await copyToClipboard(`${origin}/prompts/${itemId}`);
+    if (result.success) {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1800);
+    }
+  };
+  return (
+    <button
+      onClick={handleShare}
+      className="flex w-full items-center justify-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs font-medium text-slate-300 transition-colors hover:bg-white/10 hover:text-white"
+    >
+      {copied ? (
+        <>
+          <Check className="h-3.5 w-3.5 text-emerald-400" />
+          Share link copied
+        </>
+      ) : (
+        <>
+          <Share2 className="h-3.5 w-3.5" />
+          Copy share link
+        </>
+      )}
+    </button>
+  );
+};
 
 // Metadata display component
 const PromptMetadataSection: React.FC<{ itemId: string; status: BuyerStatus }> = ({ itemId, status }) => {
@@ -175,6 +208,9 @@ const PromptMetadataSection: React.FC<{ itemId: string; status: BuyerStatus }> =
           </p>
         </div>
       </div>
+
+      {/* Share link — points at the public prompt page with rich preview meta */}
+      <ShareLinkButton itemId={itemId} />
 
       {/* Purchase State Indicator */}
       {isPurchased && (

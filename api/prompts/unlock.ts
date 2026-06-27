@@ -14,6 +14,8 @@ import {
   hasAccess,
   type PromptHashConfig,
 } from "../../src/lib/stellar/promptHashClient";
+import { fetchCiphertextFromIpfs } from "../../src/lib/ipfs/gateway";
+import { isIpfsReference } from "../../src/lib/ipfs/reference";
 import { withObservability } from "../../src/lib/observability/wrapper";
 import { checkRateLimit } from "../../src/lib/observability/rateLimiter";
 import { checkReplayProtection } from "../../src/lib/observability/replayProtection";
@@ -256,8 +258,16 @@ async function handler(req: any, res: any) {
       unlockPublicKey,
       unlockPrivateKey,
     );
+
+    // Large payloads are stored on IPFS with only an `ipfs://<cid>` reference
+    // kept on-chain — fetch the ciphertext back before decrypting. Inline
+    // payloads (legacy listings) are decrypted directly.
+    const ciphertext = isIpfsReference(prompt.encryptedPrompt)
+      ? await fetchCiphertextFromIpfs(prompt.encryptedPrompt)
+      : prompt.encryptedPrompt;
+
     const plaintext = await decryptPromptCiphertext(
-      prompt.encryptedPrompt,
+      ciphertext,
       prompt.encryptionIv,
       keyBytes,
     );
