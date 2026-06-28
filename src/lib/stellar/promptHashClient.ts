@@ -42,7 +42,7 @@ export interface PromptRecord {
   wrappedKey?: string;
 }
 
-export type CreatePromptInput = unknown;
+export interface RevenueSplitInput {`n  recipient: string;`n  bps: number;`n}`n`nexport interface CreatePromptInput {`n  imageUrl: string;`n  title: string;`n  category: string;`n  previewText: string;`n  encryptedPrompt: string;`n  encryptionIv: string;`n  wrappedKey: string;`n  contentHash: string;`n  priceStroops: bigint;`n  splits?: RevenueSplitInput[];`n}`n
 
 export class PromptHashClient {
   /**
