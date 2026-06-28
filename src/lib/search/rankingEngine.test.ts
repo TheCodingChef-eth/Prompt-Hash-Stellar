@@ -48,7 +48,7 @@ describe("rankingEngine", () => {
     });
 
     it("should boost score for category match", () => {
-      const prompt = mockPrompt({ category: "Software Development" });
+      const prompt = mockPrompt({ category: "Architecture Services" });
       const result = calculateRelevanceScore(
         prompt,
         "Architecture",
