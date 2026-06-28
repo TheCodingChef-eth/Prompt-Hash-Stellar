@@ -120,7 +120,7 @@ export interface SearchSuggestion {
 
 export function generateNoResultSuggestions(
   allPrompts: PromptRecord[],
-  searchQuery: string,
+  _searchQuery: string,
   selectedCategory: string,
   selectedTag: string,
 ): SearchSuggestion[] {
