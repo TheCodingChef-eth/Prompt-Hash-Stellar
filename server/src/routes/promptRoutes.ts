@@ -9,6 +9,8 @@ import {
   GetDraftPrompts,
   PublishPrompt,
   ArchivePrompt,
+  SubmitPromptReport,
+  GetPromptReports,
 } from "../controllers/controllers";
 
 export const promptRouter = express.Router();
@@ -24,3 +26,7 @@ promptRouter.post("/buyer/unsave", UnsavePrompt);
 promptRouter.get("/creator/:walletAddress/drafts", GetDraftPrompts);
 promptRouter.post("/:id/publish", PublishPrompt);
 promptRouter.post("/:id/archive", ArchivePrompt);
+
+// Report endpoints
+promptRouter.post("/reports", SubmitPromptReport);
+promptRouter.get("/reports", GetPromptReports);

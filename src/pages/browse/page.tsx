@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { Filter, Search, X, GitCompare, ChevronUp } from "lucide-react";
 import { featuredPromptTemplates } from "@/data/featuredPrompts";
 import { Navigation } from "@/components/navigation";
@@ -10,7 +10,15 @@ import { MarketplaceFilters } from "@/components/MarketplaceFilters";
 import FetchAllPrompts from "./FetchAllPrompts";
 import { HeroAnimation } from "./HeroAnimation";
 import { usePageMeta } from "@/lib/seo/usePageMeta";
-import { PromptComparisonView, usePromptComparison } from "./PromptComparisonView";
+import {
+  PromptComparisonView,
+  usePromptComparison,
+} from "./PromptComparisonView";
+import {
+  getSearchStateFromUrl,
+  updateUrlWithSearchState,
+  DEFAULT_SEARCH_STATE,
+} from "@/lib/search/urlState";
 
 const categories = Array.from(
   new Set(featuredPromptTemplates.map((prompt) => prompt.category)),
@@ -20,23 +28,46 @@ const tags = ["AI", "Creative", "Product", "Sales", "Finance", "Support"];
 export default function BrowsePage() {
   usePageMeta({
     title: "Browse Prompts",
-    description: "Explore AI prompts across categories. Buy verified prompt licenses secured on the Stellar blockchain.",
+    description:
+      "Explore AI prompts across categories. Buy verified prompt licenses secured on the Stellar blockchain.",
   });
 
-  const [priceRange, setPriceRange] = useState<[number, number]>([0, 25]);
-  const [searchQuery, setSearchQuery] = useState("");
-  const [selectedCategory, setSelectedCategory] = useState("");
-  const [selectedTag, setSelectedTag] = useState("");
-  const [sortBy, setSortBy] = useState("recent");
+  // Initialize state from URL or use defaults
+  const [priceRange, setPriceRange] = useState<[number, number]>(
+    () => getSearchStateFromUrl().priceRange || DEFAULT_SEARCH_STATE.priceRange,
+  );
+  const [searchQuery, setSearchQuery] = useState(
+    () =>
+      getSearchStateFromUrl().searchQuery || DEFAULT_SEARCH_STATE.searchQuery,
+  );
+  const [selectedCategory, setSelectedCategory] = useState(
+    () =>
+      getSearchStateFromUrl().selectedCategory ||
+      DEFAULT_SEARCH_STATE.selectedCategory,
+  );
+  const [selectedTag, setSelectedTag] = useState(
+    () =>
+      getSearchStateFromUrl().selectedTag || DEFAULT_SEARCH_STATE.selectedTag,
+  );
+  const [sortBy, setSortBy] = useState(
+    () => getSearchStateFromUrl().sortBy || DEFAULT_SEARCH_STATE.sortBy,
+  );
   const [isFilterOpen, setIsFilterOpen] = useState(false);
   const [isCompareDrawerOpen, setIsCompareDrawerOpen] = useState(false);
 
-  const {
-    selected,
-    addToComparison,
-    removeFromComparison,
-    clearComparison,
-  } = usePromptComparison();
+  // Sync state to URL whenever any filter changes
+  useEffect(() => {
+    updateUrlWithSearchState({
+      searchQuery,
+      selectedCategory,
+      selectedTag,
+      priceRange,
+      sortBy,
+    });
+  }, [searchQuery, selectedCategory, selectedTag, priceRange, sortBy]);
+
+  const { selected, addToComparison, removeFromComparison, clearComparison } =
+    usePromptComparison();
 
   const activeFilterCount = useMemo(() => {
     let count = 0;
@@ -187,6 +218,9 @@ export default function BrowsePage() {
                   });
                 }
               }}
+              onSetCategory={setSelectedCategory}
+              onSetTag={setSelectedTag}
+              onClearFilters={handleClearFilters}
             />
           </div>
         </div>
@@ -196,7 +230,6 @@ export default function BrowsePage() {
       {selected.length > 0 && (
         <div className="fixed bottom-0 left-0 right-0 z-50 p-4 bg-[#090d16]/95 border-t border-white/10 backdrop-blur-md shadow-2xl animate-in slide-in-from-bottom duration-300">
           <div className="mx-auto max-w-7xl flex flex-col md:flex-row items-center justify-between gap-4">
-            
             {/* Minimized Dock Info */}
             <div className="flex flex-wrap items-center gap-4 w-full md:w-auto">
               <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400">
@@ -208,7 +241,7 @@ export default function BrowsePage() {
                   {selected.length} of 3 prompts selected
                 </p>
               </div>
-              
+
               {/* Selected items tags with remove button */}
               <div className="flex flex-wrap gap-2 sm:ml-4">
                 {selected.map((p) => (
@@ -216,7 +249,9 @@ export default function BrowsePage() {
                     key={p.id}
                     className="flex items-center gap-2 rounded-lg bg-white/5 border border-white/10 px-2.5 py-1 text-xs"
                   >
-                    <span className="truncate max-w-[100px] font-medium text-slate-200">{p.title}</span>
+                    <span className="truncate max-w-[100px] font-medium text-slate-200">
+                      {p.title}
+                    </span>
                     <button
                       onClick={() => removeFromComparison(p.id)}
                       className="rounded-full hover:bg-white/10 p-0.5 text-slate-400 hover:text-white transition-colors"
@@ -260,7 +295,9 @@ export default function BrowsePage() {
                 <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400">
                   <GitCompare className="h-4 w-4" />
                 </span>
-                <h2 className="text-xl font-bold text-white">Compare Prompts</h2>
+                <h2 className="text-xl font-bold text-white">
+                  Compare Prompts
+                </h2>
               </div>
               <Button
                 variant="ghost"

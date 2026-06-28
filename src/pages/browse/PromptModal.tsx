@@ -8,6 +8,7 @@ import { Skeleton } from "../../components/Skeleton";
 import { StatusBanner } from "../../components/StatusBanner";
 import { UnlockExplainer } from "../../components/UnlockExplainer";
 import { copyToClipboard } from "../../lib/clipboard/secureClipboard";
+import { ReportDialog } from "../../components/prompts/ReportDialog";
 import {
   CheckCircle,
   Loader2,
@@ -24,6 +25,7 @@ import {
   ShoppingBag,
   Hash,
   Share2,
+  Flag,
 } from "lucide-react";
 
 // Small inline copy button used in the receipt reference details
@@ -108,7 +110,7 @@ const ShareLinkButton: React.FC<{ itemId: string }> = ({ itemId }) => {
 };
 
 // Metadata display component
-const PromptMetadataSection: React.FC<{ itemId: string; status: BuyerStatus }> = ({ itemId, status }) => {
+const PromptMetadataSection: React.FC<{ itemId: string; status: BuyerStatus; onReportClick?: () => void }> = ({ itemId, status, onReportClick }) => {
   const { data: prompt, isLoading } = useQuery({
     queryKey: ["prompt-detail", itemId],
     queryFn: async () => {
@@ -212,6 +214,17 @@ const PromptMetadataSection: React.FC<{ itemId: string; status: BuyerStatus }> =
       {/* Share link — points at the public prompt page with rich preview meta */}
       <ShareLinkButton itemId={itemId} />
 
+      {/* Report Button */}
+      {onReportClick && (
+        <button
+          onClick={onReportClick}
+          className="flex w-full items-center justify-center gap-2 rounded-lg border border-red-500/20 bg-red-500/5 px-3 py-2 text-xs font-medium text-red-400 transition-colors hover:bg-red-500/10 hover:border-red-500/40"
+        >
+          <Flag className="h-3.5 w-3.5" />
+          Report prompt
+        </button>
+      )}
+
       {/* Purchase State Indicator */}
       {isPurchased && (
         <div className="p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/20 flex items-center gap-2">
@@ -244,6 +257,7 @@ export const PromptModal: React.FC<PromptModalProps> = ({
   const [secretContent, setSecretContent] = useState<string>("");
   const [isCheckingAccess, setIsCheckingAccess] = useState(false);
   const [showReviewForm, setShowReviewForm] = useState(false);
+  const [showReportDialog, setShowReportDialog] = useState(false);
   const [copyFeedback, setCopyFeedback] = useState<{
     visible: boolean;
     success: boolean;
@@ -439,7 +453,7 @@ export const PromptModal: React.FC<PromptModalProps> = ({
           </div>
 
           {/* Prompt Metadata Section */}
-          <PromptMetadataSection itemId={itemId} status={status} />
+          <PromptMetadataSection itemId={itemId} status={status} onReportClick={() => setShowReportDialog(true)} />
 
           {isCheckingAccess ? (
             <div className="space-y-4 py-4">
@@ -747,6 +761,14 @@ export const PromptModal: React.FC<PromptModalProps> = ({
             <ReviewList reviews={reviewData.reviews} isLoading={reviewsLoading} />
           </div>
         )}
+
+        {/* Report Dialog */}
+        <ReportDialog
+          promptId={itemId}
+          isOpen={showReportDialog}
+          onClose={() => setShowReportDialog(false)}
+          userAddress={wallet?.address}
+        />
       </div>
     </div>
   );

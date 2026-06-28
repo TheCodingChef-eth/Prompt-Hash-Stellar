@@ -303,3 +303,102 @@ export const TestPromptProxy = async (
     });
   }
 };
+
+
+/* REPORT CONTROLLERS */
+
+export const SubmitPromptReport = async (
+  req: Request,
+  res: Response,
+): Promise<Response<any>> => {
+  try {
+    await connectDb();
+
+    const { promptId, reporterAddress, reason, description } = req.body;
+
+    // Validate required fields
+    if (!promptId || !reporterAddress || !reason) {
+      return res.status(400).json({
+        error: "Missing required fields: promptId, reporterAddress, reason",
+      });
+    }
+
+    // Validate reason
+    const validReasons = ["quality-issue", "misleading-content", "plagiarism", "harmful-content", "copyright", "other"];
+    if (!validReasons.includes(reason)) {
+      return res.status(400).json({
+        error: "Invalid reason provided",
+      });
+    }
+
+    // Check if prompt exists
+    const prompt = await Prompt.findById(promptId);
+    if (!prompt) {
+      return res.status(404).json({
+        error: "Prompt not found",
+      });
+    }
+
+    // Import Report model dynamically
+    const Report = require("../models/Report").default;
+
+    // Create new report
+    const newReport = new Report({
+      promptId,
+      reporterAddress: reporterAddress.toLowerCase(),
+      reason,
+      description: description || "",
+    });
+
+    await newReport.save();
+
+    return res.status(201).json({
+      success: true,
+      message: "Report submitted successfully",
+      reportId: newReport._id,
+    });
+  } catch (err) {
+    console.error("Submit report error:", err);
+    return res.status(500).json({
+      error: (err as Error).message || "Failed to submit report",
+    });
+  }
+};
+
+export const GetPromptReports = async (
+  req: Request,
+  res: Response,
+): Promise<Response<any>> => {
+  try {
+    await connectDb();
+
+    // Check admin authentication (placeholder)
+    const adminToken = req.headers.authorization?.split(" ")[1];
+    if (!adminToken) {
+      return res.status(401).json({
+        error: "Unauthorized: Admin token required",
+      });
+    }
+
+    const { searchParams } = new URL(req.url);
+    const promptId = searchParams.get("promptId");
+
+    // Import Report model dynamically
+    const Report = require("../models/Report").default;
+
+    const query: any = {};
+    if (promptId) {
+      query.promptId = promptId;
+    }
+
+    const reports = await Report.find(query)
+      .sort({ createdAt: -1 });
+
+    return res.json(reports);
+  } catch (err) {
+    console.error("Get reports error:", err);
+    return res.status(500).json({
+      error: (err as Error).message || "Failed to fetch reports",
+    });
+  }
+};

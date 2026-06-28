@@ -27,15 +27,17 @@ import {
 import { stroopsToXlmString } from "@/lib/stellar/format";
 import { PromptCard } from "./PromptCard";
 import { PromptModal } from "./PromptModal";
+import { NoResultsSuggestions } from "./NoResultsSuggestions";
 import { invalidateAllPromptQueries } from "@/hooks/useContractSync";
+import { rankPrompts } from "@/lib/search/rankingEngine";
 
 const ITEMS_PER_PAGE = 9;
 const ENABLE_INFINITE_SCROLL = true;
 
 const isMarketplaceConfigured = Boolean(
   browserStellarConfig.promptHashContractId &&
-    browserStellarConfig.simulationAccount &&
-    browserStellarConfig.rpcUrl,
+  browserStellarConfig.simulationAccount &&
+  browserStellarConfig.rpcUrl,
 );
 
 const parseXlmNumber = (value: bigint) => Number(stroopsToXlmString(value));
@@ -48,6 +50,9 @@ export interface FetchAllPromptsProps {
   sortBy: string;
   comparedIds?: string[];
   onToggleCompare?: (prompt: PromptRecord) => void;
+  onSetCategory?: (category: string) => void;
+  onSetTag?: (tag: string) => void;
+  onClearFilters?: () => void;
 }
 
 const FetchAllPrompts = ({
@@ -58,6 +63,9 @@ const FetchAllPrompts = ({
   sortBy,
   comparedIds = [],
   onToggleCompare,
+  onSetCategory,
+  onSetTag,
+  onClearFilters,
 }: FetchAllPromptsProps) => {
   const queryClient = useQueryClient();
   const { address } = useWallet();
@@ -116,7 +124,7 @@ const FetchAllPrompts = ({
           setCurrentPage((prev) => prev + 1);
         }
       },
-      { threshold: 0.1, rootMargin: "100px" }
+      { threshold: 0.1, rootMargin: "100px" },
     );
 
     observer.observe(loadMoreRef.current);
@@ -166,7 +174,7 @@ const FetchAllPrompts = ({
 
   const filteredPrompts = useMemo(() => {
     const normalizedSearch = searchQuery.trim().toLowerCase();
-    const prompts = (promptsQuery.data ?? []).filter((prompt) => {
+    let prompts = (promptsQuery.data ?? []).filter((prompt) => {
       const promptPrice = parseXlmNumber(prompt.priceStroops);
       const matchesCategory =
         !selectedCategory || prompt.category === selectedCategory;
@@ -182,12 +190,25 @@ const FetchAllPrompts = ({
         prompt.previewText.toLowerCase().includes(normalizedSearch) ||
         (prompt.description ?? "").toLowerCase().includes(normalizedSearch) ||
         prompt.creator.toLowerCase().includes(normalizedSearch) ||
-        prompt.tags?.some((tag) => tag.toLowerCase().includes(normalizedSearch));
+        prompt.tags?.some((tag) =>
+          tag.toLowerCase().includes(normalizedSearch),
+        );
       const matchesPrice =
         promptPrice >= priceRange[0] && promptPrice <= priceRange[1];
 
-      return prompt.active && matchesCategory && matchesTag && matchesSearch && matchesPrice;
+      return (
+        prompt.active &&
+        matchesCategory &&
+        matchesTag &&
+        matchesSearch &&
+        matchesPrice
+      );
     });
+
+    // Apply ranking engine for improved search relevance when search query exists
+    if (normalizedSearch) {
+      prompts = rankPrompts(prompts, searchQuery, selectedCategory);
+    }
 
     switch (sortBy) {
       case "price-low":
@@ -203,13 +224,20 @@ const FetchAllPrompts = ({
       default:
         return [...prompts].sort((a, b) => Number(b.id - a.id));
     }
-  }, [priceRange, promptsQuery.data, searchQuery, selectedCategory, sortBy]);
+  }, [
+    priceRange,
+    promptsQuery.data,
+    searchQuery,
+    selectedCategory,
+    sortBy,
+    selectedTag,
+  ]);
 
   const totalPages = Math.max(
     1,
     Math.ceil(filteredPrompts.length / ITEMS_PER_PAGE),
   );
-  
+
   // For infinite scroll, show all items up to current page
   const currentPrompts = ENABLE_INFINITE_SCROLL
     ? filteredPrompts.slice(0, currentPage * ITEMS_PER_PAGE)
@@ -265,18 +293,15 @@ const FetchAllPrompts = ({
       )}
 
       {filteredPrompts.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-20 text-center space-y-4">
-          <div className="p-4 rounded-full bg-slate-900 border border-white/5">
-            <PackageSearch className="h-8 w-8 text-slate-500" />
-          </div>
-          <div className="space-y-1">
-            <h3 className="text-lg font-semibold">No prompts found</h3>
-            <p className="text-slate-500 max-w-[280px]">
-              Try adjusting your filters or search terms to find what you're
-              looking for.
-            </p>
-          </div>
-        </div>
+        <NoResultsSuggestions
+          allPrompts={promptsQuery.data ?? []}
+          searchQuery={searchQuery}
+          selectedCategory={selectedCategory}
+          selectedTag={selectedTag}
+          onCategoryClick={onSetCategory || (() => {})}
+          onTagClick={onSetTag || (() => {})}
+          onClearFilters={onClearFilters || (() => {})}
+        />
       ) : (
         <>
           <div className="grid grid-cols-1 gap-8 md:grid-cols-2 xl:grid-cols-3">
@@ -309,14 +334,22 @@ const FetchAllPrompts = ({
           )}
 
           {/* Show count indicator for infinite scroll */}
-          {ENABLE_INFINITE_SCROLL && filteredPrompts.length > ITEMS_PER_PAGE && (
-            <div className="mt-8 text-center">
-              <p className="text-sm text-slate-500">
-                Showing <span className="text-white font-semibold">{currentPrompts.length}</span> of{" "}
-                <span className="text-white font-semibold">{filteredPrompts.length}</span> prompts
-              </p>
-            </div>
-          )}
+          {ENABLE_INFINITE_SCROLL &&
+            filteredPrompts.length > ITEMS_PER_PAGE && (
+              <div className="mt-8 text-center">
+                <p className="text-sm text-slate-500">
+                  Showing{" "}
+                  <span className="text-white font-semibold">
+                    {currentPrompts.length}
+                  </span>{" "}
+                  of{" "}
+                  <span className="text-white font-semibold">
+                    {filteredPrompts.length}
+                  </span>{" "}
+                  prompts
+                </p>
+              </div>
+            )}
         </>
       )}
 
