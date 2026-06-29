@@ -7,6 +7,7 @@ import {
 } from "@/components/sell/ListingQualityChecklist";
 import { CreatorOnboarding } from "@/components/sell/CreatorOnboarding";
 import { PricingGuidance } from "@/components/sell/PricingGuidance";
+import { TagInput } from "@/components/sell/TagInput";
 import { featuredPromptTemplates } from "@/data/featuredPrompts";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -54,6 +55,7 @@ interface FormData {
   previewText: string;
   fullPrompt: string;
   priceXlm: string;
+  tags: string[];
 }
 
 interface CreatePromptFormProps {
@@ -69,6 +71,7 @@ const createEmptyFormData = (): FormData => ({
   previewText: "",
   fullPrompt: "",
   priceXlm: "2",
+  tags: [],
 });
 
 export function CreatePromptForm({ onCreated }: CreatePromptFormProps) {
@@ -85,8 +88,6 @@ export function CreatePromptForm({ onCreated }: CreatePromptFormProps) {
   const [showChecklist, setShowChecklist] = useState(false);
   const [draftRestored, setDraftRestored] = useState(false);
   const [lastSavedAt, setLastSavedAt] = useState<string | null>(null);
-  const [showOnboarding, setShowOnboarding] = useState(true);
-  const [isFirstListing, setIsFirstListing] = useState(true);
 
   const isConfigured = useMemo(
     () =>
@@ -108,6 +109,17 @@ export function CreatePromptForm({ onCreated }: CreatePromptFormProps) {
   );
 
   const checklistHasFailures = checklistItems.some((i) => i.status === "fail");
+
+  // Derive which onboarding steps the creator has completed from form state
+  const completedOnboardingStepIds = useMemo(() => {
+    const ids: string[] = [];
+    if (address) ids.push("wallet");
+    if (formData.title.trim().length >= 3 && formData.category) ids.push("title");
+    if (formData.previewText.trim().length >= 10) ids.push("preview");
+    if (formData.fullPrompt.trim().length >= 10) ids.push("prompt");
+    if (parseFloat(formData.priceXlm) >= 0.1) ids.push("price");
+    return ids;
+  }, [address, formData]);
 
   const clearDraft = () => {
     if (draftStorageKey) {
@@ -299,12 +311,11 @@ export function CreatePromptForm({ onCreated }: CreatePromptFormProps) {
 
   return (
     <div className="space-y-6">
-      {showOnboarding && (
-        <CreatorOnboarding
-          isFirstListing={isFirstListing}
-          onDismiss={() => setShowOnboarding(false)}
-        />
-      )}
+      <CreatorOnboarding
+        completedStepIds={completedOnboardingStepIds}
+        walletAddress={address ?? undefined}
+        isFirstListing={!draftRestored}
+      />
 
       {!isConfigured ? (
         <div className="rounded-2xl border border-amber-400/20 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
@@ -430,6 +441,17 @@ export function CreatePromptForm({ onCreated }: CreatePromptFormProps) {
             </p>
           ) : null}
         </div>
+      </div>
+
+      {/* #259 — Tag suggestions */}
+      <div className="space-y-2">
+        <label className="text-sm font-medium">Tags</label>
+        <TagInput
+          value={formData.tags}
+          onChange={(tags) =>
+            setFormData((prev) => ({ ...prev, tags }))
+          }
+        />
       </div>
 
       <PricingGuidance currentPriceXlm={formData.priceXlm} />
