@@ -13,6 +13,7 @@ import { WalletProvider } from "./providers/WalletProvider.tsx";
 import { TransactionProvider } from "./components/TransactionProvider.tsx";
 import { NotificationProvider } from "./providers/NotificationProvider.tsx";
 import { ContractSyncProvider } from "./providers/ContractSyncProvider.tsx";
+import { ErrorBoundary } from "./components/ErrorBoundary.tsx";
 
 // ── Sentry frontend monitoring (#332) ─────────────────────────────────────
 // Set PUBLIC_SENTRY_DSN in .env to enable error reporting.
@@ -46,18 +47,20 @@ const queryClient = new QueryClient({
 
 createRoot(document.getElementById("root") as HTMLElement).render(
   <StrictMode>
-    <NotificationProvider>
-      <QueryClientProvider client={queryClient}>
-        <ContractSyncProvider>
-          <TransactionProvider>
-            <WalletProvider>
-              <BrowserRouter>
-                <App />
-              </BrowserRouter>
-            </WalletProvider>
-          </TransactionProvider>
-        </ContractSyncProvider>
-      </QueryClientProvider>
-    </NotificationProvider>
+    <ErrorBoundary>
+      <NotificationProvider>
+        <QueryClientProvider client={queryClient}>
+          <ContractSyncProvider>
+            <TransactionProvider>
+              <WalletProvider>
+                <BrowserRouter>
+                  <App />
+                </BrowserRouter>
+              </WalletProvider>
+            </TransactionProvider>
+          </ContractSyncProvider>
+        </QueryClientProvider>
+      </NotificationProvider>
+    </ErrorBoundary>
   </StrictMode>,
 );

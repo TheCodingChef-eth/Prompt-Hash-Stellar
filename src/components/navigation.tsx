@@ -64,8 +64,7 @@ export function Navigation() {
           </nav>
         </div>
 
-        <div className="hidden md:flex items-center gap-2 md:gap-4">
-          <NetworkSwitcher />
+        <div className="hidden items-center gap-2 md:flex md:gap-4">
           <ThemeToggle />
           <SellerNotificationCenter />
           <DisplayWallet />
