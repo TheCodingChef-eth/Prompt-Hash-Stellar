@@ -16,6 +16,7 @@ import { FeaturedCreators } from "@/components/FeaturedCreators";
 import { Button } from "@/components/ui/button";
 import { MarketplaceAnalyticsCards } from "@/components/analytics/MarketplaceAnalyticsCards";
 import { usePageMeta } from "@/lib/seo/usePageMeta";
+import { Web3Tooltip } from "@/components/Web3Tooltip";
 
 const stats = [
   {
@@ -32,7 +33,7 @@ const stats = [
   },
   {
     label: "Instant settlement",
-    value: "XLM Native",
+    value: <Web3Tooltip term="XLM">XLM Native</Web3Tooltip>,
     body: "Payments settle in seconds on Stellar with minimal fees.",
     icon: Zap,
   },
@@ -48,8 +49,11 @@ const steps = [
   {
     number: "02",
     title: "List for Sale",
-    description:
-      "Set your price in XLM, configure revenue splits, and make your prompt available to buyers.",
+    description: (
+      <>
+        Set your price in <Web3Tooltip term="XLM">XLM</Web3Tooltip>, configure revenue splits, and make your prompt available to buyers.
+      </>
+    ),
   },
   {
     number: "03",
@@ -96,9 +100,9 @@ export default function Home() {
 
               <p className="max-w-2xl text-lg leading-relaxed text-slate-300">
                 Creators publish previews and encrypted prompt payloads on
-                Stellar. Buyers purchase access in XLM, prove wallet ownership
-                with SEP-43 signing, and unlock plaintext only after the contract
-                confirms their license.
+                Stellar. Buyers purchase access in <Web3Tooltip term="XLM">XLM</Web3Tooltip>, prove wallet ownership
+                with <Web3Tooltip term="Sign Transaction">SEP-43 signing</Web3Tooltip>, and unlock plaintext only after the contract
+                verifies payment.
               </p>
 
               <div className="flex flex-wrap gap-4">
