@@ -3156,3 +3156,50 @@ fn test_lease_price_is_40_percent_of_listing() {
     let creator_balance_after = xlm_client.balance(&creator);
     assert_eq!(creator_balance_after - creator_balance_before, expected_creator_amount);
 }
+
+#[test]
+fn test_get_prompts_by_ids_returns_matching_prompts() {
+    let env: Env = Default::default();
+    let context = setup(&env);
+    let client = PromptHashContractClient::new(&env, &context.contract);
+    let creator = Address::generate(&env);
+
+    let id0 = create_prompt(&env, &client, &creator, "Prompt A", 1_000, &context.xlm);
+    let id1 = create_prompt(&env, &client, &creator, "Prompt B", 2_000, &context.xlm);
+    let id2 = create_prompt(&env, &client, &creator, "Prompt C", 3_000, &context.xlm);
+
+    // Fetch all three
+    let ids = Vec::from_array(&env, [id0, id1, id2]);
+    let prompts = client.get_prompts_by_ids(&ids).unwrap();
+    assert_eq!(prompts.len(), 3);
+    assert_eq!(prompts.get(0).unwrap().title, String::from_str(&env, "Prompt A"));
+    assert_eq!(prompts.get(1).unwrap().title, String::from_str(&env, "Prompt B"));
+    assert_eq!(prompts.get(2).unwrap().title, String::from_str(&env, "Prompt C"));
+}
+
+#[test]
+fn test_get_prompts_by_ids_skips_nonexistent() {
+    let env: Env = Default::default();
+    let context = setup(&env);
+    let client = PromptHashContractClient::new(&env, &context.contract);
+    let creator = Address::generate(&env);
+
+    let id0 = create_prompt(&env, &client, &creator, "Exists", 1_000, &context.xlm);
+
+    // Include a non-existent ID (999)
+    let ids = Vec::from_array(&env, [id0, 999]);
+    let prompts = client.get_prompts_by_ids(&ids).unwrap();
+    assert_eq!(prompts.len(), 1);
+    assert_eq!(prompts.get(0).unwrap().title, String::from_str(&env, "Exists"));
+}
+
+#[test]
+fn test_get_prompts_by_ids_empty_list() {
+    let env: Env = Default::default();
+    let context = setup(&env);
+    let client = PromptHashContractClient::new(&env, &context.contract);
+
+    let ids = Vec::new(&env);
+    let prompts = client.get_prompts_by_ids(&ids).unwrap();
+    assert_eq!(prompts.len(), 0);
+}
